@@ -834,7 +834,7 @@ impl ExecutionPayloadEnvelopesByRootRequest {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq, Ssz)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ssz)]
 #[ssz(derive_hash = false)]
 pub struct InclusionListsByIndicesRequest<P: Preset> {
     pub slot: Slot,
