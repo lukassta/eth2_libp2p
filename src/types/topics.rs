@@ -38,6 +38,7 @@ pub const EXECUTION_PAYLOAD_TOPIC: &str = "execution_payload";
 pub const PAYLOAD_ATTESTATION_MESSAGE_TOPIC: &str = "payload_attestation_message";
 pub const PROPOSER_PREFERENCES_TOPIC: &str = "proposer_preferences";
 pub const INCLUSION_LIST_TOPIC: &str = "inclusion_list";
+pub const RANDAO_COMMITMENT_REGISTRATION_TOPIC: &str = "randao_commitment_registration";
 
 #[derive(Debug)]
 pub struct TopicConfig {
@@ -109,6 +110,10 @@ pub fn core_topics_to_subscribe(
         topics.push(GossipKind::InclusionList);
     }
 
+    if current_phase >= Phase::Eip8321 {
+        topics.push(GossipKind::RandaoCommitmentRegistration);
+    }
+
     topics
 }
 
@@ -137,7 +142,8 @@ pub fn is_fork_non_core_topic(topic: &GossipTopic, _phase: Phase) -> bool {
         | GossipKind::ExecutionPayload
         | GossipKind::PayloadAttestationMessage
         | GossipKind::ProposerPreferences
-        | GossipKind::InclusionList => false,
+        | GossipKind::InclusionList
+        | GossipKind::RandaoCommitmentRegistration => false,
     }
 }
 
@@ -206,6 +212,8 @@ pub enum GossipKind {
     ProposerPreferences,
     /// Topic for publishing signed inclusion lists.
     InclusionList,
+    /// Topic for publishing validators' hash-chain RANDAO commitment registrations.
+    RandaoCommitmentRegistration,
 }
 
 impl std::fmt::Display for GossipKind {
@@ -289,6 +297,9 @@ impl GossipTopic {
                 PAYLOAD_ATTESTATION_MESSAGE_TOPIC => GossipKind::PayloadAttestationMessage,
                 PROPOSER_PREFERENCES_TOPIC => GossipKind::ProposerPreferences,
                 INCLUSION_LIST_TOPIC => GossipKind::InclusionList,
+                RANDAO_COMMITMENT_REGISTRATION_TOPIC => {
+                    GossipKind::RandaoCommitmentRegistration
+                }
                 topic => match subnet_topic_index(topic) {
                     Some(kind) => kind,
                     None => return Err(format!("Unknown topic: {}", topic)),
@@ -358,6 +369,9 @@ impl std::fmt::Display for GossipTopic {
             GossipKind::PayloadAttestationMessage => PAYLOAD_ATTESTATION_MESSAGE_TOPIC.into(),
             GossipKind::ProposerPreferences => PROPOSER_PREFERENCES_TOPIC.into(),
             GossipKind::InclusionList => INCLUSION_LIST_TOPIC.into(),
+            GossipKind::RandaoCommitmentRegistration => {
+                RANDAO_COMMITMENT_REGISTRATION_TOPIC.into()
+            }
         };
         write!(
             f,

@@ -22,7 +22,9 @@ use types::{
         SignedExecutionPayloadBid,
     },
     deneb::containers::SignedBeaconBlock as DenebBeaconBlock,
-    eip8321::containers::SignedBeaconBlock as Eip8321SignedBeaconBlock,
+    eip8321::containers::{
+        SignedBeaconBlock as Eip8321SignedBeaconBlock, SignedRandaoCommitmentRegistration,
+    },
     electra::containers::{
         AttesterSlashing as ElectraAttesterSlashing,
         SignedAggregateAndProof as ElectraSignedAggregateAndProof,
@@ -93,6 +95,9 @@ pub enum PubsubMessage<P: Preset> {
     ProposerPreferences(Arc<SignedProposerPreferences>),
     /// Gossipsub message providing notification of a signed inclusion list.
     InclusionList(Arc<SignedInclusionList<P>>),
+    /// Gossipsub message providing notification of a validator's hash-chain RANDAO
+    /// commitment registration.
+    RandaoCommitmentRegistration(Arc<SignedRandaoCommitmentRegistration>),
 }
 
 // Implements the `DataTransform` trait of gossipsub to employ snappy compression
@@ -194,6 +199,9 @@ impl<P: Preset> PubsubMessage<P> {
             PubsubMessage::PayloadAttestationMessage(_) => GossipKind::PayloadAttestationMessage,
             PubsubMessage::ProposerPreferences(_) => GossipKind::ProposerPreferences,
             PubsubMessage::InclusionList(_) => GossipKind::InclusionList,
+            PubsubMessage::RandaoCommitmentRegistration(_) => {
+                GossipKind::RandaoCommitmentRegistration
+            }
         }
     }
 
@@ -691,6 +699,31 @@ impl<P: Preset> PubsubMessage<P> {
                             )),
                         }
                     }
+                    GossipKind::RandaoCommitmentRegistration => {
+                        match fork_context.get_fork_from_context_bytes(gossip_topic.fork_digest) {
+                            Some(Phase::Eip8321) => {
+                                SignedRandaoCommitmentRegistration::from_ssz_default(data)
+                                    .map(Arc::new)
+                                    .map(PubsubMessage::RandaoCommitmentRegistration)
+                                    .map_err(|e| format!("{:?}", e))
+                            }
+                            Some(
+                                Phase::Phase0
+                                | Phase::Altair
+                                | Phase::Bellatrix
+                                | Phase::Capella
+                                | Phase::Deneb
+                                | Phase::Electra
+                                | Phase::Fulu
+                                | Phase::Gloas
+                                | Phase::Heze,
+                            )
+                            | None => Err(format!(
+                                "randao_commitment_registration topic invalid for given fork                                  digest {:?}",
+                                gossip_topic.fork_digest
+                            )),
+                        }
+                    }
                 }
             }
         }
@@ -722,6 +755,7 @@ impl<P: Preset> PubsubMessage<P> {
             PubsubMessage::PayloadAttestationMessage(data) => data.to_ssz(),
             PubsubMessage::ProposerPreferences(data) => data.to_ssz(),
             PubsubMessage::InclusionList(data) => data.to_ssz(),
+            PubsubMessage::RandaoCommitmentRegistration(data) => data.to_ssz(),
         }
     }
 }
@@ -822,6 +856,13 @@ impl<P: Preset> std::fmt::Display for PubsubMessage<P> {
                     f,
                     "Inclusion List: slot: {}, validator_index: {}",
                     data.message.slot, data.message.validator_index,
+                )
+            }
+            PubsubMessage::RandaoCommitmentRegistration(data) => {
+                write!(
+                    f,
+                    "RANDAO Commitment Registration: validator_index: {}, commitment: {:?}",
+                    data.message.validator_index, data.message.commitment,
                 )
             }
         }
