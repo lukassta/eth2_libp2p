@@ -354,6 +354,7 @@ pub(crate) fn create_whitelist_filter(
         add(PayloadAttestationMessage);
         add(ProposerPreferences);
         add(InclusionList);
+        add(RandaoCommitmentRegistration);
     }
     gossipsub::WhitelistSubscriptionFilter(possible_hashes)
 }
@@ -385,5 +386,57 @@ pub(crate) fn save_metadata_to_disk(dir: Option<&Path>, metadata: MetaData) {
                 "Could not write metadata to disk"
             );
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gossipsub::TopicSubscriptionFilter as _;
+    use types::{nonstandard::Phase, phase0::primitives::H32};
+
+    use crate::types::{all_topics_at_fork, core_topics_to_subscribe};
+
+    use super::*;
+
+    /// Every topic the node would ever subscribe to must be permitted by the whitelist.
+    ///
+    /// `create_whitelist_filter` hand-enumerates topic kinds while
+    /// `core_topics_to_subscribe` enumerates them separately, and neither is an exhaustive
+    /// `match`, so a kind added to one and forgotten in the other compiles cleanly and then
+    /// fails at runtime with `NotAllowed` only at the fork that introduces it. That is
+    /// exactly how the EIP-8321 `randao_commitment_registration` topic was missed.
+    #[test]
+    fn whitelist_permits_every_topic_the_node_subscribes_to() {
+        let chain_config = Arc::new(ChainConfig::minimal());
+        let fork_digest = H32([1, 2, 3, 4]);
+
+        let mut filter = create_whitelist_filter(vec![fork_digest], &chain_config, 64, 4);
+
+        for phase in enum_iterator::all::<Phase>() {
+            for kind in all_topics_at_fork(&chain_config, phase) {
+                let topic: gossipsub::IdentTopic =
+                    GossipTopic::new(kind.clone(), GossipEncoding::SSZSnappy, fork_digest).into();
+
+                assert!(
+                    filter.can_subscribe(&topic.hash()),
+                    "whitelist rejects {kind:?}, which is a core topic at {phase}; \
+                     add it to `create_whitelist_filter`",
+                );
+            }
+        }
+
+        // Guard the generic claim above with the specific case that regressed.
+        let registration: gossipsub::IdentTopic = GossipTopic::new(
+            GossipKind::RandaoCommitmentRegistration,
+            GossipEncoding::SSZSnappy,
+            fork_digest,
+        )
+        .into();
+
+        assert!(filter.can_subscribe(&registration.hash()));
+
+        // Keep `core_topics_to_subscribe` referenced so this test fails to compile if its
+        // signature drifts away from `all_topics_at_fork`'s.
+        let _ = core_topics_to_subscribe;
     }
 }
